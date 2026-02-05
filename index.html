@@ -483,15 +483,33 @@
         let currentPitch = 0;
         let targetPitch = 0; // For smoothing parameter changes
 
-        // Presets updated for more realism
+        let loFilter, midFilter, hiFilter; // Formant Filter Chain
+
+        // Presets updated for Formant Shaping
         const presets = {
-            normal: { pitch: 0, echo: 0, robot: false, filter: null },
-            // Feminine: +2.5st (subtler), Cut lows (HighPass), Boost highs (HighShelf)
-            // Excessive pitch shifting (+4/5) sounds robotic. +2.5 is 'safer'.
-            feminine: { pitch: 2.5, echo: 0, robot: false, filter: { type: 'highpass', freq: 180, gain: 0 } },
-            // Masculine: -2.5st, Boost Lows
-            masculine: { pitch: -2.5, echo: 0, robot: false, filter: { type: 'lowshelf', freq: 300, gain: 5 } },
-            robot: { pitch: -1, echo: 0.3, robot: true, filter: null }
+            normal: {
+                pitch: 0, echo: 0, robot: false,
+                eq: { lF: 200, lG: 0, mF: 1000, mG: 0, hF: 4000, hG: 0 }
+            },
+            feminine: {
+                pitch: 4.0, // Targeted Pitch
+                echo: 0, robot: false,
+                // Formant Strategy:
+                // 1. Cut Lows (Male Chest): LowShelf @ 160Hz, -10dB
+                // 2. Reduce Mud: Peaking @ 500Hz, -4dB
+                // 3. Boost Presence: HighShelf @ 3500Hz, +5dB
+                eq: { lF: 160, lG: -10, mF: 500, mG: -4, hF: 3500, hG: 5 }
+            },
+            masculine: {
+                pitch: -3.5,
+                echo: 0, robot: false,
+                // Boost chest, cut highs
+                eq: { lF: 150, lG: 8, mF: 500, mG: 4, hF: 3000, hG: -6 }
+            },
+            robot: {
+                pitch: -1, echo: 0.3, robot: true,
+                eq: { lF: 200, lG: 0, mF: 1000, mG: 0, hF: 4000, hG: 0 }
+            }
         };
 
         async function initAudio() {
@@ -600,9 +618,15 @@
                     return s1 * (1 - f) + s2 * f;
                 }
 
-                // 2. EQ / Filter
-                filterNode = audioCtx.createBiquadFilter();
-                filterNode.type = 'allpass';
+                // 2. Formant EQ Chain
+                loFilter = audioCtx.createBiquadFilter();
+                midFilter = audioCtx.createBiquadFilter();
+                hiFilter = audioCtx.createBiquadFilter();
+
+                // Defaults (AllPass / Flat)
+                loFilter.type = 'lowshelf'; loFilter.frequency.value = 200; loFilter.gain.value = 0;
+                midFilter.type = 'peaking'; midFilter.frequency.value = 1000; midFilter.gain.value = 0;
+                hiFilter.type = 'highshelf'; hiFilter.frequency.value = 4000; hiFilter.gain.value = 0;
 
                 // 3. Robot Effect
                 robotOsc = audioCtx.createOscillator();
@@ -630,9 +654,12 @@
 
                 // --- Routing ---
                 micSource.connect(scriptProcessor);
-                scriptProcessor.connect(filterNode);
+                scriptProcessor.connect(loFilter);
+                loFilter.connect(midFilter);
+                midFilter.connect(hiFilter);
+                hiFilter.connect(robotCarrierGain);
 
-                filterNode.connect(robotCarrierGain);
+                // Old filterNode.connect(robotCarrierGain) replaced by above chain
 
                 function enableRobot(enable) {
                     if (enable) {
@@ -849,16 +876,16 @@
             robotToggle.checked = p.robot;
             if (window.setRobotEffect) window.setRobotEffect(p.robot);
 
-            // Set Filter
-            if (filterNode) {
-                if (p.filter) {
-                    filterNode.type = p.filter.type;
-                    filterNode.frequency.value = p.filter.freq;
-                    filterNode.gain.value = p.filter.gain;
-                } else {
-                    filterNode.type = 'allpass';
-                    filterNode.gain.value = 0;
-                }
+            // Set Formant Filter Chain
+            if (loFilter && midFilter && hiFilter && p.eq) {
+                loFilter.frequency.value = p.eq.lF;
+                loFilter.gain.value = p.eq.lG;
+
+                midFilter.frequency.value = p.eq.mF;
+                midFilter.gain.value = p.eq.mG;
+
+                hiFilter.frequency.value = p.eq.hF;
+                hiFilter.gain.value = p.eq.hG;
             }
         }
 
