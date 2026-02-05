@@ -471,131 +471,17 @@
         // When Read Head passes Write Head, we fade out/in to a new offset.
         // High Quality Pitch Shifter using Dual Delay-Line (Overlap-Add)
         // This reduces the 'tremolo' artifact of single-window granular synthesis.
-        const reliablePitchWorklet = `
-        class PitchProcessor extends AudioWorkletProcessor {
-            constructor() {
-                super();
-                this.bufferSize = 8192; // Large buffer for safety
-                this.buffer = new Float32Array(this.bufferSize);
-                this.writeIdx = 0;
-                this.phase = 0; // 0..1 phasor for windowing
-            }
-            
-            static get parameterDescriptors() {
-                return [{ name: 'pitch', defaultValue: 0 }];
-            }
+        // --- Audio Engine: ScriptProcessorNode (Legacy) ---
+        // We use ScriptProcessor because AudioWorklet's 'addModule' often fails 
+        // on local file:// protocol due to CORS/Origin restrictions.
+        // This ensures the code RUNS regardless of how the file is opened.
 
-            process(inputs, outputs, parameters) {
-                const input = inputs[0][0];
-                const output = outputs[0][0];
-                const pitchParam = parameters.pitch[0]; 
-                
-                // Passthrough if near zero
-                if (Math.abs(pitchParam) < 0.1) {
-                    if (input) output.set(input);
-                    return true;
-                }
-
-                if (!input) return true;
-
-                // Algorithm Settings
-                const windowSize = 0.05; // 50ms window size
-                const overlap = windowSize * sampleRate; // samples
-                
-                // Pitch factor: 
-                // We want to simulate playing faster/slower.
-                // However, we are in a delay line. 
-                // The rate of change of delay determines pitch.
-                // Shift up (+12st) -> Play 2x speed -> Consume 2x samples -> Delay decreases.
-                
-                const ratio = Math.pow(2, pitchParam / 12);
-                
-                // Phasor rate calculation:
-                // We need to cycle through the "grains" to reset the delay pointers.
-                // The speed of the phasor depends on the desired pitch shift.
-                // (1 - ratio) / overlap_samples ? 
-                // Basically, we slide the read pointer relative to write pointer.
-                
-                const phaseInc = (1 - ratio) / overlap;
-
-                for (let i = 0; i < input.length; i++) {
-                    // 1. Write to circular buffer
-                    this.buffer[this.writeIdx] = input[i];
-                    
-                    // 2. Calculate two read pointers based on Phase (0..1)
-                    // Ptr A matches Phase 0..1
-                    // Ptr B matches Phase 0.5..1.5 (wrapped)
-                    
-                    // Delay amount (in samples) varies from 0 to overlap
-                    // We look "back" from writeIdx.
-                    
-                    let phaseA = this.phase;
-                    let phaseB = (this.phase + 0.5) % 1.0;
-                    
-                    // Triangle Window Output (Crossfade)
-                    // 0 -> 0, 0.5 -> 1, 1 -> 0
-                    let gainA = 1.0 - 2.0 * Math.abs(phaseA - 0.5);
-                    let gainB = 1.0 - 2.0 * Math.abs(phaseB - 0.5);
-                    
-                    // Delay offsets
-                    const delayA = phaseA * overlap;
-                    const delayB = phaseB * overlap;
-                    
-                    // Read positions
-                    let rIdxA = this.writeIdx - delayA;
-                    let rIdxB = this.writeIdx - delayB;
-                    
-                    // Handle wrapping logic for array access
-                    if (rIdxA < 0) rIdxA += this.bufferSize;
-                    if (rIdxB < 0) rIdxB += this.bufferSize;
-                    // Double safety for negative modulo
-                    while(rIdxA < 0) rIdxA += this.bufferSize; 
-                    while(rIdxB < 0) rIdxB += this.bufferSize;
-                    
-                    // Linear Interpolation Read
-                    let valA = this.getSample(rIdxA);
-                    let valB = this.getSample(rIdxB);
-                    
-                    output[i] = valA * gainA + valB * gainB;
-                    
-                    // Increment and wrap pointers
-                    this.writeIdx = (this.writeIdx + 1) % this.bufferSize;
-                    
-                    // Increment Phase
-                    // Note: If ratio > 1 (Pitch Up), phaseInc is negative?
-                    // 1 - 2 = -1. Phase decreases. Delay shrinks. Correct.
-                    // If ratio < 1 (Pitch Down), phaseInc is positive. Delay grows. Correct.
-                    
-                    this.phase += phaseInc;
-                    if (this.phase >= 1.0) this.phase -= 1.0;
-                    if (this.phase < 0.0) this.phase += 1.0;
-                }
-                return true;
-            }
-
-            getSample(idx) {
-                let i = Math.floor(idx);
-                let f = idx - i;
-                let s1 = this.buffer[i % this.bufferSize];
-                let s2 = this.buffer[(i + 1) % this.bufferSize];
-                return s1 * (1 - f) + s2 * f;
-            }
-        }
-        registerProcessor('pitch-processor', PitchProcessor);
-        `;
-
-        // ... initAudio ... (handled by existing code, replacing worklet string)
-
-        // Presets updated for more realism
-        const presets = {
-            normal: { pitch: 0, echo: 0, robot: false, filter: null },
-            // Feminine: +2.5st (subtler), Cut lows (HighPass), Boost highs (HighShelf)
-            // Excessive pitch shifting (+4/5) sounds robotic. +2.5 is 'safer'.
-            feminine: { pitch: 2.5, echo: 0, robot: false, filter: { type: 'highpass', freq: 180, gain: 0 } },
-            // Masculine: -2.5st, Boost Lows
-            masculine: { pitch: -2.5, echo: 0, robot: false, filter: { type: 'lowshelf', freq: 300, gain: 5 } },
-            robot: { pitch: -1, echo: 0.3, robot: true, filter: null }
-        };
+        let scriptProcessor;
+        let pitchBuffer;
+        let pitchBufferPtr = 0;
+        let pitchPhase = 0;
+        let currentPitch = 0;
+        let targetPitch = 0; // For smoothing parameter changes
 
         async function initAudio() {
             try {
@@ -619,37 +505,105 @@
                 // --- Build Graph ---
                 micSource = audioCtx.createMediaStreamSource(stream);
 
-                // 1. Pitch Shifter (Worklet)
-                const blob = new Blob([reliablePitchWorklet], { type: 'application/javascript' });
-                const blobUrl = URL.createObjectURL(blob);
+                // 1. Pitch Shifter (ScriptProcessor)
+                // Buffer size 4096 = ~92ms latency, good balance for JS perf
+                scriptProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
 
-                try {
-                    await audioCtx.audioWorklet.addModule(blobUrl);
-                    workletNode = new AudioWorkletNode(audioCtx, 'pitch-processor');
-                } catch (e) {
-                    console.warn("Worklet failed (likely security restriction):", e);
-                    // Fallback to pass-through if worklet fails (e.g. strict origin)
-                    // But we will continue setup
+                // Initialize Pitch Buffer (Larger for safety)
+                const bufSize = 16384;
+                pitchBuffer = new Float32Array(bufSize);
+                pitchBufferPtr = 0;
+
+                scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+                    const inputBuffer = audioProcessingEvent.inputBuffer;
+                    const outputBuffer = audioProcessingEvent.outputBuffer;
+                    const inputData = inputBuffer.getChannelData(0);
+                    const outputData = outputBuffer.getChannelData(0);
+
+                    // Smooth parameter
+                    // Move currentPitch towards targetPitch
+                    if (Math.abs(targetPitch - currentPitch) > 0.01) {
+                        currentPitch += (targetPitch - currentPitch) * 0.1;
+                    } else {
+                        currentPitch = targetPitch;
+                    }
+
+                    // DSP Logic (Same as Dual-Delay)
+                    if (Math.abs(currentPitch) < 0.1) {
+                        outputData.set(inputData);
+
+                        // Keep buffer updated even in bypass to avoid clicks on engage
+                        for (let i = 0; i < inputData.length; i++) {
+                            pitchBuffer[pitchBufferPtr] = inputData[i];
+                            pitchBufferPtr = (pitchBufferPtr + 1) % bufSize;
+                        }
+                        return;
+                    }
+
+                    const sampleRate = audioCtx.sampleRate;
+                    const windowSize = 0.05;
+                    const overlap = windowSize * sampleRate;
+                    const ratio = Math.pow(2, currentPitch / 12);
+                    const phaseInc = (1 - ratio) / overlap;
+
+                    for (let i = 0; i < inputData.length; i++) {
+                        // Write
+                        pitchBuffer[pitchBufferPtr] = inputData[i];
+
+                        // Read
+                        let phaseA = pitchPhase;
+                        let phaseB = (pitchPhase + 0.5) % 1.0;
+
+                        let gainA = 1.0 - 2.0 * Math.abs(phaseA - 0.5);
+                        let gainB = 1.0 - 2.0 * Math.abs(phaseB - 0.5);
+
+                        const delayA = phaseA * overlap;
+                        const delayB = phaseB * overlap;
+
+                        let rIdxA = pitchBufferPtr - delayA;
+                        let rIdxB = pitchBufferPtr - delayB;
+
+                        // Wrap
+                        while (rIdxA < 0) rIdxA += bufSize;
+                        while (rIdxB < 0) rIdxB += bufSize;
+
+                        // Cubic/Linear Interp
+                        let valA = getSample(pitchBuffer, rIdxA, bufSize);
+                        let valB = getSample(pitchBuffer, rIdxB, bufSize);
+
+                        outputData[i] = valA * gainA + valB * gainB;
+
+                        // Increment
+                        pitchBufferPtr = (pitchBufferPtr + 1) % bufSize;
+                        pitchPhase += phaseInc;
+                        if (pitchPhase >= 1.0) pitchPhase -= 1.0;
+                        if (pitchPhase < 0.0) pitchPhase += 1.0;
+                    }
+                };
+
+                function getSample(buf, idx, len) {
+                    let i = Math.floor(idx);
+                    let f = idx - i;
+                    let s1 = buf[i % len];
+                    let s2 = buf[(i + 1) % len];
+                    return s1 * (1 - f) + s2 * f;
                 }
 
                 // 2. EQ / Filter
                 filterNode = audioCtx.createBiquadFilter();
-                filterNode.type = 'allpass'; // Start neutral
+                filterNode.type = 'allpass';
 
-                // 3. Robot Effect (Ring Mod)
-                // Source splits: -> Dry -> Merge
-                //                -> Osc gain (carrier) -> Gain (modulator) -> Merge
+                // 3. Robot Effect
                 robotOsc = audioCtx.createOscillator();
                 robotOsc.frequency.value = 50;
                 robotOsc.start();
-
                 const robotCarrierGain = audioCtx.createGain();
                 robotCarrierGain.gain.value = 1.0;
 
                 // 4. Echo
                 delayNode = audioCtx.createDelay();
                 delayFeedback = audioCtx.createGain();
-                delayNode.delayTime.value = 0.0; // Init
+                delayNode.delayTime.value = 0.0;
                 delayFeedback.gain.value = 0.4;
                 delayNode.connect(delayFeedback);
                 delayFeedback.connect(delayNode);
@@ -657,39 +611,20 @@
                 // Master Gain
                 gainNode = audioCtx.createGain();
                 monitorGain = audioCtx.createGain();
-                monitorGain.gain.value = 0; // Muted initially
+                monitorGain.gain.value = 0;
 
                 // Visualizer
                 analyser = audioCtx.createAnalyser();
                 analyser.fftSize = 256;
 
                 // --- Routing ---
-                // Mic -> Worklet -> Filter -> RobotGain -> Delay -> Master.
+                micSource.connect(scriptProcessor);
+                scriptProcessor.connect(filterNode);
 
-                if (workletNode) {
-                    micSource.connect(workletNode);
-                    workletNode.connect(filterNode);
-                } else {
-                    micSource.connect(filterNode);
-                }
-
-                // Ring Mod implementation
                 filterNode.connect(robotCarrierGain);
 
-                // Robot Mod Logic: Osc modulates gain. 
-                // Note: To truly get ring mod, we need to multiply signal by osc.
-                // GainNode 'gain' param * Audio Signal. 
                 function enableRobot(enable) {
                     if (enable) {
-                        // To achieve Ring Mod in WebAudio:
-                        // We used to connect Osc -> Gain.gain.
-                        // But if Gain.gain is 1, it modulates 0..1? 
-                        // No, Osc output is -1..1.
-                        // 1 + (-1..1) = 0..2 modulation (Tremolo).
-                        // We want pure Ring Mod (AM with carrier suppressed? No, just AM).
-                        // If we basically want "Dalek":
-                        // Gain.gain.value = 0. Connect Osc. 
-                        // Result = Input * Osc.
                         robotCarrierGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.01);
                         robotOsc.connect(robotCarrierGain.gain);
                     } else {
@@ -698,17 +633,11 @@
                     }
                 }
 
-                // Output to Delay
                 robotCarrierGain.connect(delayNode);
-                // Dry path for delay
                 robotCarrierGain.connect(gainNode);
-                // Wet path for delay
                 delayNode.connect(gainNode);
 
-                // Master -> Analyser -> Destination / Recorder
                 gainNode.connect(analyser);
-
-                // Monitor
                 analyser.connect(monitorGain);
                 monitorGain.connect(audioCtx.destination);
 
@@ -720,15 +649,12 @@
                 recorder.ondataavailable = e => recordedChunks.push(e.data);
                 recorder.onstop = exportRecording;
 
-                // Store enableRobot function for toggle
                 window.setRobotEffect = enableRobot;
-
-                // Start Visualizer
                 drawVisualizer();
 
             } catch (err) {
                 console.error(err);
-                statusText.innerText = "Error accessing microphone. HTTPS required!";
+                statusText.innerText = "Error: " + err.message;
                 statusText.style.color = "var(--error)";
             }
         }
@@ -839,10 +765,7 @@
         });
 
         function updatePitch(semitones) {
-            if (workletNode) {
-                const pitchParam = workletNode.parameters.get('pitch');
-                pitchParam.setTargetAtTime(semitones, audioCtx.currentTime, 0.1);
-            }
+            targetPitch = semitones;
         }
 
         // Echo Slider
