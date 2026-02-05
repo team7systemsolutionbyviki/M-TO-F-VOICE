@@ -469,14 +469,16 @@
         // Actually, I'll use a very specific, simpler algorithm for the Worklet:
         // Just a Ring Buffer where Read Head moves at `rate` speed. 
         // When Read Head passes Write Head, we fade out/in to a new offset.
+        // High Quality Pitch Shifter using Dual Delay-Line (Overlap-Add)
+        // This reduces the 'tremolo' artifact of single-window granular synthesis.
         const reliablePitchWorklet = `
         class PitchProcessor extends AudioWorkletProcessor {
             constructor() {
                 super();
-                this.bufferSize = 4096;
+                this.bufferSize = 8192; // Large buffer for safety
                 this.buffer = new Float32Array(this.bufferSize);
                 this.writeIdx = 0;
-                this.readIdx = 0;
+                this.phase = 0; // 0..1 phasor for windowing
             }
             
             static get parameterDescriptors() {
@@ -488,73 +490,85 @@
                 const output = outputs[0][0];
                 const pitchParam = parameters.pitch[0]; 
                 
-                // If no pitch shift, passthrough
+                // Passthrough if near zero
                 if (Math.abs(pitchParam) < 0.1) {
                     if (input) output.set(input);
                     return true;
                 }
 
-                // Grain Size: 50ms approx (sample rate 44.1k -> ~2000 samples)
-                const grainSize = 2048; 
-                // Rate: 2^(st/12)
-                const rate = Math.pow(2, pitchParam / 12);
-                
                 if (!input) return true;
 
-                for (let i = 0; i < input.length; i++) {
-                    // Write to circular buffer
-                    this.buffer[this.writeIdx] = input[i];
-                    this.writeIdx = (this.writeIdx + 1) % this.bufferSize;
+                // Algorithm Settings
+                const windowSize = 0.05; // 50ms window size
+                const overlap = windowSize * sampleRate; // samples
+                
+                // Pitch factor: 
+                // We want to simulate playing faster/slower.
+                // However, we are in a delay line. 
+                // The rate of change of delay determines pitch.
+                // Shift up (+12st) -> Play 2x speed -> Consume 2x samples -> Delay decreases.
+                
+                const ratio = Math.pow(2, pitchParam / 12);
+                
+                // Phasor rate calculation:
+                // We need to cycle through the "grains" to reset the delay pointers.
+                // The speed of the phasor depends on the desired pitch shift.
+                // (1 - ratio) / overlap_samples ? 
+                // Basically, we slide the read pointer relative to write pointer.
+                
+                const phaseInc = (1 - ratio) / overlap;
 
-                    // Read Strategy:
-                    // We interpret "Pitch Shift" as changing playback speed (rate).
-                    // To keep constant duration (real-time), we must duplicate/skip grains.
+                for (let i = 0; i < input.length; i++) {
+                    // 1. Write to circular buffer
+                    this.buffer[this.writeIdx] = input[i];
                     
-                    // Simple logic:
-                    // Read Head moves at 'rate'.
-                    // If rate > 1 (higher pitch), read head catches up to write head. We jump back.
-                    // If rate < 1 (lower pitch), write head laps read head. We jump forward.
+                    // 2. Calculate two read pointers based on Phase (0..1)
+                    // Ptr A matches Phase 0..1
+                    // Ptr B matches Phase 0.5..1.5 (wrapped)
                     
-                    // Implementation: 
-                    // Calculate relative position based on a phasor [0..1]
-                    // We use the "Jungle" method or similar:
-                    // Output = buffer[readPos] * window + buffer[readPos + grainSize/2] * (1-window)
-                    // But effectively simpler:
+                    // Delay amount (in samples) varies from 0 to overlap
+                    // We look "back" from writeIdx.
                     
-                    // Update read pointer
-                    this.readIdx += rate;
+                    let phaseA = this.phase;
+                    let phaseB = (this.phase + 0.5) % 1.0;
                     
-                    // Boundary wrap
-                    if (this.readIdx >= this.bufferSize) this.readIdx -= this.bufferSize;
+                    // Triangle Window Output (Crossfade)
+                    // 0 -> 0, 0.5 -> 1, 1 -> 0
+                    let gainA = 1.0 - 2.0 * Math.abs(phaseA - 0.5);
+                    let gainB = 1.0 - 2.0 * Math.abs(phaseB - 0.5);
                     
-                    // Calculate "Distance" from Write Head to Read Head
-                    // We want read head to stay indefinitely "behind" write head.
-                    // If it drifts too close, we re-center it.
+                    // Delay offsets
+                    const delayA = phaseA * overlap;
+                    const delayB = phaseB * overlap;
                     
-                    let dist = (this.writeIdx - this.readIdx + this.bufferSize) % this.bufferSize;
+                    // Read positions
+                    let rIdxA = this.writeIdx - delayA;
+                    let rIdxB = this.writeIdx - delayB;
                     
-                    // Center target is bufferSize / 2
-                    // If we drift more than grainSize away from center, we seamlessly slide/reset?
-                    // Hard reset causes click.
+                    // Handle wrapping logic for array access
+                    if (rIdxA < 0) rIdxA += this.bufferSize;
+                    if (rIdxB < 0) rIdxB += this.bufferSize;
+                    // Double safety for negative modulo
+                    while(rIdxA < 0) rIdxA += this.bufferSize; 
+                    while(rIdxB < 0) rIdxB += this.bufferSize;
                     
-                    // Let's implement the hard reset but with a "Crossfade Window" logic.
-                    // Actually, simpler: 
+                    // Linear Interpolation Read
+                    let valA = this.getSample(rIdxA);
+                    let valB = this.getSample(rIdxB);
                     
-                    // READ SAMPLE 1
-                    let r1 = this.readIdx;
-                    let val1 = this.getSample(r1);
+                    output[i] = valA * gainA + valB * gainB;
                     
-                    output[i] = val1;
+                    // Increment and wrap pointers
+                    this.writeIdx = (this.writeIdx + 1) % this.bufferSize;
                     
-                    // Maneuver Logic:
-                    // If distance < grainSize (Overrun imminent), jump back grainSize
-                    // If distance > bufferSize - grainSize (Underrun), jump forward grainSize
+                    // Increment Phase
+                    // Note: If ratio > 1 (Pitch Up), phaseInc is negative?
+                    // 1 - 2 = -1. Phase decreases. Delay shrinks. Correct.
+                    // If ratio < 1 (Pitch Down), phaseInc is positive. Delay grows. Correct.
                     
-                    if (dist < grainSize) {
-                        this.readIdx = (this.readIdx - grainSize + this.bufferSize) % this.bufferSize;
-                    } else if (dist > this.bufferSize - grainSize) {
-                        this.readIdx = (this.readIdx + grainSize) % this.bufferSize;
-                    }
+                    this.phase += phaseInc;
+                    if (this.phase >= 1.0) this.phase -= 1.0;
+                    if (this.phase < 0.0) this.phase += 1.0;
                 }
                 return true;
             }
@@ -567,13 +581,21 @@
                 return s1 * (1 - f) + s2 * f;
             }
         }
-        
-        // Let's try an even simpler overlap-add approach if the above is clicking.
-        // But for "Robot/Voice Changer" fun, the artifacting is acceptable if it actually SHIFTS.
-        // The previous code had a logic bug where it didn't crossfade or strictly enforce pitch.
-        
         registerProcessor('pitch-processor', PitchProcessor);
         `;
+
+        // ... initAudio ... (handled by existing code, replacing worklet string)
+
+        // Presets updated for more realism
+        const presets = {
+            normal: { pitch: 0, echo: 0, robot: false, filter: null },
+            // Feminine: +2.5st (subtler), Cut lows (HighPass), Boost highs (HighShelf)
+            // Excessive pitch shifting (+4/5) sounds robotic. +2.5 is 'safer'.
+            feminine: { pitch: 2.5, echo: 0, robot: false, filter: { type: 'highpass', freq: 180, gain: 0 } },
+            // Masculine: -2.5st, Boost Lows
+            masculine: { pitch: -2.5, echo: 0, robot: false, filter: { type: 'lowshelf', freq: 300, gain: 5 } },
+            robot: { pitch: -1, echo: 0.3, robot: true, filter: null }
+        };
 
         async function initAudio() {
             try {
@@ -851,13 +873,9 @@
             // Logic in visualizer loop
         });
 
-        // Presets
-        const presets = {
-            normal: { pitch: 0, echo: 0, robot: false, filter: null },
-            feminine: { pitch: 3.5, echo: 0, robot: false, filter: { type: 'highshelf', freq: 1000, gain: 5 } }, // Pitch+4, brighter
-            masculine: { pitch: -4, echo: 0, robot: false, filter: { type: 'lowshelf', freq: 500, gain: 5 } }, // Pitch-4, deeper
-            robot: { pitch: -1, echo: 0.3, robot: true, filter: null }
-        };
+        // Presets removed from here (moved to top with worklet for clarity)
+        // listeners attached below
+
 
         presetBtns.forEach(btn => {
             btn.addEventListener('click', () => {
