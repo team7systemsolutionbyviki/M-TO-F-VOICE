@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceMorph Studio</title>
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --bg-surface: #1e1e1e;
+            --primary: #bb86fc;
+            --primary-variant: #3700b3;
+            --secondary: #03dac6;
+            --error: #cf6679;
+            --text-main: #ffffff;
+            --text-muted: #b0b0b0;
+            --border: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background-color: var(--bg-surface);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            margin: 0;
+            font-weight: 300;
+            letter-spacing: 2px;
+            color: var(--primary);
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin-top: 5px;
+            font-weight: 400;
+        }
+
+        /* Controls Grid */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+        }
+
+        .panel {
+            background: rgba(255,255,255,0.03);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-weight: 600;
+            color: var(--secondary);
+        }
+
+        /* Sliders */
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #dbaaf9;
+            transform: scale(1.1);
+        }
+
+        /* Switches */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input { opacity: 0; width: 0; height: 0; }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #444;
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* Buttons */
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background-color: var(--primary-variant);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: background 0.2s, transform 0.1s;
+            flex-grow: 1;
+        }
+
+        button:hover {
+            background-color: var(--primary);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.secondary {
+            background-color: #333;
+        }
+        button.secondary:hover { background-color: #444; }
+
+        button.record-btn {
+            background-color: var(--error);
+            width: 100%;
+        }
+        button.record-btn.recording {
+            animation: pulse 1.5s infinite;
+            background-color: red;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+
+        /* Visualizer */
+        canvas {
+            width: 100%;
+            height: 100px;
+            background-color: #000;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        /* Warning */
+        .warning {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+            border-top: 1px solid var(--border);
+            padding-top: 15px;
+        }
+
+        .status {
+            text-align: center;
+            height: 20px;
+            color: var(--secondary);
+            font-size: 0.9rem;
+        }
+        
+        .presets {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .preset-btn {
+            font-size: 0.8rem;
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px solid var(--border);
+        }
+        .preset-btn.active {
+            background: var(--secondary);
+            color: #000;
+            border-color: var(--secondary);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>VOICEMORPH STUDIO</h1>
+            <h2>Real-time Web Audio Voice Changer</h2>
+        </header>
+
+        <canvas id="visualizer"></canvas>
+        <div class="status" id="status-text">Ready. Click 'Start Mic' to begin.</div>
+
+        <div class="panel">
+            <button id="start-btn">🎙️ Start Microphone</button>
+        </div>
+
+        <div class="controls-grid">
+            <!-- Effects Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>Effects</span>
+                    <label class="switch">
+                        <input type="checkbox" id="monitor-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="presets">
+                    <button class="preset-btn active" data-preset="normal">Normal</button>
+                    <button class="preset-btn" data-preset="feminine">Feminine</button>
+                    <button class="preset-btn" data-preset="masculine">Masculine</button>
+                    <button class="preset-btn" data-preset="robot">Robot</button>
+                </div>
+
+                <div class="control-group">
+                    <label>
+                        <span>Pitch Shift</span>
+                        <span id="pitch-val">0</span>
+                    </label>
+                    <input type="range" id="pitch-slider" min="-12" max="12" step="0.5" value="0">
+                </div>
+                
+                <div class="control-group">
+                    <label>
+                        <span>Echo / Reverb</span>
+                        <span id="echo-val">0%</span>
+                    </label>
+                    <input type="range" id="echo-slider" min="0" max="0.8" step="0.05" value="0">
+                </div>
+
+                <div class="control-group">
+                    <label>
+                        <span>Robot Modulation</span>
+                        <span>On/Off</span>
+                    </label>
+                    <label class="switch">
+                        <input type="checkbox" id="robot-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="control-group">
+                    <label>
+                        <span>Noise Gate</span>
+                        <span>On/Off</span>
+                    </label>
+                    <label class="switch">
+                        <input type="checkbox" id="gate-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Recorder Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span>Recording studio</span>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <button id="record-btn" class="record-btn" disabled>Start Recording</button>
+                    
+                    <audio id="audio-player" controls style="width: 100%; display: none;"></audio>
+                    
+                    <div class="btn-group">
+                        <button id="download-btn" class="secondary" disabled>Download WAV (WebM)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="warning">
+            ⚠️ Disclaimer: For entertainment and accessibility purposes only. Do not use for impersonation or illegal activities.
+        </div>
+    </div>
+
+    <script>
+        // --- Audio Context & State ---
+        let audioCtx;
+        let micSource;
+        let workletNode; // Pitch shifter
+        let gainNode; // Master volume
+        let monitorGain; // Live monitoring
+        let analyser;
+        let robotOsc;
+        let robotGain;
+        let dryNode, wetNode; // For mixing robot effect
+        let delayNode, delayFeedback; // Echo
+        let filterNode; // EQ
+        let gateNode; // DynamicsCompressor acting as hard limit/gate or specific script
+        let recorder;
+        let recordedChunks = [];
+        let recordStreamDest;
+
+        // UI Elements
+        const startBtn = document.getElementById('start-btn');
+        const monitorToggle = document.getElementById('monitor-toggle');
+        const pitchSlider = document.getElementById('pitch-slider');
+        const pitchVal = document.getElementById('pitch-val');
+        const echoSlider = document.getElementById('echo-slider');
+        const echoVal = document.getElementById('echo-val');
+        const robotToggle = document.getElementById('robot-toggle');
+        const gateToggle = document.getElementById('gate-toggle');
+        const statusText = document.getElementById('status-text');
+        const canvas = document.getElementById('visualizer');
+        const canvasCtx = canvas.getContext('2d');
+        const presetBtns = document.querySelectorAll('.preset-btn');
+        
+        const recordBtn = document.getElementById('record-btn');
+        const audioPlayer = document.getElementById('audio-player');
+        const downloadBtn = document.getElementById('download-btn');
+
+        let isRecording = false;
+
+        // --- Worklet Blob URL ---
+        // We inject the AudioWorklet processor code directly via a Blob to keep this single-file.
+        
+        // Actually, I'll use a very specific, simpler algorithm for the Worklet:
+        // Just a Ring Buffer where Read Head moves at `rate` speed. 
+        // When Read Head passes Write Head, we fade out/in to a new offset.
+        const reliablePitchWorklet = `
+        class PitchProcessor extends AudioWorkletProcessor {
+            constructor() {
+                super();
+                this.bufferSize = 4096;
+                this.buffer = new Float32Array(this.bufferSize);
+                this.writeIdx = 0;
+                this.readIdx = 0;
+                this.fadeLength = 128; // Used for potential crossfading logic if expanded
+            }
+            
+            static get parameterDescriptors() {
+                return [{ name: 'pitch', defaultValue: 0 }];
+            }
+
+            process(inputs, outputs, parameters) {
+                const input = inputs[0][0];
+                const output = outputs[0][0];
+                const pitchParam = parameters.pitch[0]; // Semitones
+                
+                // Calculate rate: 2^(st/12)
+                const rate = Math.pow(2, pitchParam / 12);
+
+                if (!input) return true;
+
+                for (let i = 0; i < input.length; i++) {
+                    // WRITE
+                    this.buffer[this.writeIdx] = input[i];
+                    this.writeIdx = (this.writeIdx + 1) % this.bufferSize;
+
+                    // READ logic (Simple Granular)
+                    const rInt = Math.floor(this.readIdx);
+                    const rFrac = this.readIdx - rInt;
+                    const next = (rInt + 1) % this.bufferSize;
+                    
+                    // Linear Interpolation
+                    const val = this.buffer[rInt] * (1 - rFrac) + this.buffer[next] * rFrac;
+                    output[i] = val;
+
+                    // Move read head
+                    this.readIdx += rate;
+                    if (this.readIdx >= this.bufferSize) this.readIdx -= this.bufferSize;
+
+                    // Anti-artifact / Anti-drift Logic:
+                    // Distance from Write to Read (Circular separation)
+                    let dist = (this.writeIdx - this.readIdx + this.bufferSize) % this.bufferSize;
+                    
+                    // We want the read pointer to ideally be halfway around the buffer (max safety margin)
+                    // If it gets too close to the write pointer ( < 128 samples or > buffer-128 ), jump.
+                    
+                    if (dist < 128 || dist > this.bufferSize - 128) {
+                        // Jump read pointer to safe zone (Write - Size/2)
+                        this.readIdx = (this.writeIdx - this.bufferSize / 2 + this.bufferSize) % this.bufferSize;
+                    }
+                }
+                return true;
+            }
+        }
+        registerProcessor('pitch-processor', PitchProcessor);
+        `;
+
+        async function initAudio() {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Mic Input
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }});
+                
+                statusText.innerText = "Microphone Active";
+                startBtn.disabled = true;
+                startBtn.classList.add('secondary');
+                startBtn.innerText = "Active";
+                recordBtn.disabled = false;
+
+                // --- Build Graph ---
+                micSource = audioCtx.createMediaStreamSource(stream);
+                
+                // 1. Pitch Shifter (Worklet)
+                const blob = new Blob([reliablePitchWorklet], { type: 'application/javascript' });
+                const blobUrl = URL.createObjectURL(blob);
+                
+                try {
+                    await audioCtx.audioWorklet.addModule(blobUrl);
+                    workletNode = new AudioWorkletNode(audioCtx, 'pitch-processor');
+                } catch (e) {
+                    console.warn("Worklet failed (likely security restriction):", e);
+                    // Fallback to pass-through if worklet fails (e.g. strict origin)
+                    // But we will continue setup
+                }
+                
+                // 2. EQ / Filter
+                filterNode = audioCtx.createBiquadFilter();
+                filterNode.type = 'allpass'; // Start neutral
+                
+                // 3. Robot Effect (Ring Mod)
+                // Source splits: -> Dry -> Merge
+                //                -> Osc gain (carrier) -> Gain (modulator) -> Merge
+                robotOsc = audioCtx.createOscillator();
+                robotOsc.frequency.value = 50;
+                robotOsc.start();
+                
+                const robotCarrierGain = audioCtx.createGain();
+                robotCarrierGain.gain.value = 1.0;
+                
+                // 4. Echo
+                delayNode = audioCtx.createDelay();
+                delayFeedback = audioCtx.createGain();
+                delayNode.delayTime.value = 0.0; // Init
+                delayFeedback.gain.value = 0.4;
+                delayNode.connect(delayFeedback);
+                delayFeedback.connect(delayNode);
+                
+                // Master Gain
+                gainNode = audioCtx.createGain();
+                monitorGain = audioCtx.createGain();
+                monitorGain.gain.value = 0; // Muted initially
+                
+                // Visualizer
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+
+                // --- Routing ---
+                // Mic -> Worklet -> Filter -> RobotGain -> Delay -> Master.
+                
+                if (workletNode) {
+                    micSource.connect(workletNode);
+                    workletNode.connect(filterNode);
+                } else {
+                    micSource.connect(filterNode);
+                }
+                
+                // Ring Mod implementation
+                filterNode.connect(robotCarrierGain);
+                
+                // Robot Mod Logic: Osc modulates gain. 
+                // Note: To truly get ring mod, we need to multiply signal by osc.
+                // GainNode 'gain' param * Audio Signal. 
+                function enableRobot(enable) {
+                    if(enable) {
+                       // To achieve Ring Mod in WebAudio:
+                       // We used to connect Osc -> Gain.gain.
+                       // But if Gain.gain is 1, it modulates 0..1? 
+                       // No, Osc output is -1..1.
+                       // 1 + (-1..1) = 0..2 modulation (Tremolo).
+                       // We want pure Ring Mod (AM with carrier suppressed? No, just AM).
+                       // If we basically want "Dalek":
+                       // Gain.gain.value = 0. Connect Osc. 
+                       // Result = Input * Osc.
+                       robotCarrierGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.01);
+                       robotOsc.connect(robotCarrierGain.gain);
+                    } else {
+                       try { robotOsc.disconnect(robotCarrierGain.gain); } catch(e){}
+                       robotCarrierGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+                    }
+                }
+                
+                // Output to Delay
+                robotCarrierGain.connect(delayNode);
+                // Dry path for delay
+                robotCarrierGain.connect(gainNode);
+                // Wet path for delay
+                delayNode.connect(gainNode);
+
+                // Master -> Analyser -> Destination / Recorder
+                gainNode.connect(analyser);
+                
+                // Monitor
+                analyser.connect(monitorGain);
+                monitorGain.connect(audioCtx.destination);
+                
+                // Recorder
+                recordStreamDest = audioCtx.createMediaStreamDestination();
+                analyser.connect(recordStreamDest);
+                
+                recorder = new MediaRecorder(recordStreamDest.stream);
+                recorder.ondataavailable = e => recordedChunks.push(e.data);
+                recorder.onstop = exportRecording;
+                
+                // Store enableRobot function for toggle
+                window.setRobotEffect = enableRobot;
+
+                // Start Visualizer
+                drawVisualizer();
+
+            } catch (err) {
+                console.error(err);
+                statusText.innerText = "Error accessing microphone. HTTPS required!";
+                statusText.style.color = "var(--error)";
+            }
+        }
+
+        // --- Controls ---
+        
+        startBtn.addEventListener('click', () => {
+             // Resume context if suspended (browser requirements)
+             if (audioCtx && audioCtx.state === 'suspended') {
+                 audioCtx.resume();
+             }
+             if (!audioCtx) initAudio();
+        });
+
+        // Monitor
+        monitorToggle.addEventListener('change', (e) => {
+            if (monitorGain) {
+                monitorGain.gain.setTargetAtTime(e.target.checked ? 1 : 0, audioCtx.currentTime, 0.1);
+            }
+        });
+
+        // Pitch Slider
+        pitchSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            pitchVal.innerText = val > 0 ? `+${val}` : val;
+            updatePitch(val);
+            
+            // Unset presets visuals if manual change?
+            presetBtns.forEach(b => b.classList.remove('active'));
+        });
+
+        function updatePitch(semitones) {
+            if (workletNode) {
+                const pitchParam = workletNode.parameters.get('pitch');
+                pitchParam.setTargetAtTime(semitones, audioCtx.currentTime, 0.1);
+            }
+        }
+
+        // Echo Slider
+        echoSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            echoVal.innerText = Math.round(val * 100) + "%";
+            
+            if (delayNode) {
+                 if (val === 0) {
+                     delayNode.delayTime.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                     delayFeedback.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                 } else {
+                     delayNode.delayTime.setTargetAtTime(0.3, audioCtx.currentTime, 0.1); // Fixed 300ms
+                     delayFeedback.gain.setTargetAtTime(val, audioCtx.currentTime, 0.1);
+                 }
+            }
+        });
+
+        // Robot Toggle
+        robotToggle.addEventListener('change', (e) => {
+            if (window.setRobotEffect) {
+                window.setRobotEffect(e.target.checked);
+            }
+        });
+
+        // Gate Toggle (Visualization based mute?)
+        gateToggle.addEventListener('change', (e) => {
+             // Logic in visualizer loop
+        });
+
+        // Presets
+        const presets = {
+            normal: { pitch: 0, echo: 0, robot: false, filter: null },
+            feminine: { pitch: 3.5, echo: 0, robot: false, filter: { type: 'highshelf', freq: 1000, gain: 5 } }, // Pitch+4, brighter
+            masculine: { pitch: -4, echo: 0, robot: false, filter: { type: 'lowshelf', freq: 500, gain: 5 } }, // Pitch-4, deeper
+            robot: { pitch: -1, echo: 0.3, robot: true, filter: null }
+        };
+
+        presetBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.preset;
+                applyPreset(key);
+                
+                // UI update
+                presetBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        function applyPreset(name) {
+            const p = presets[name];
+            
+            // Set Pitch
+            pitchSlider.value = p.pitch;
+            pitchVal.innerText = p.pitch;
+            updatePitch(p.pitch);
+            
+            // Set Echo
+            echoSlider.value = p.echo;
+            echoVal.innerText = (p.echo * 100) + "%";
+            // Trigger input event logic manually
+            if (delayNode) {
+                const val = p.echo;
+                if (val === 0) {
+                     delayNode.delayTime.value = 0;
+                     delayFeedback.gain.value = 0;
+                 } else {
+                     delayNode.delayTime.value = 0.25;
+                     delayFeedback.gain.value = val;
+                 }
+            }
+
+            // Set Robot
+            robotToggle.checked = p.robot;
+            if (window.setRobotEffect) window.setRobotEffect(p.robot);
+            
+            // Set Filter
+            if (filterNode) {
+                if (p.filter) {
+                    filterNode.type = p.filter.type;
+                    filterNode.frequency.value = p.filter.freq;
+                    filterNode.gain.value = p.filter.gain;
+                } else {
+                    filterNode.type = 'allpass';
+                    filterNode.gain.value = 0;
+                }
+            }
+        }
+
+        // --- Recording ---
+        recordBtn.addEventListener('click', () => {
+            if (!recorder) return;
+            
+            if (isRecording) {
+                // Stop
+                recorder.stop();
+                isRecording = false;
+                recordBtn.innerText = "Start Recording";
+                recordBtn.classList.remove('recording');
+                downloadBtn.disabled = false;
+            } else {
+                // Start
+                recordedChunks = [];
+                audioPlayer.style.display = 'none';
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                recorder.start();
+                isRecording = true;
+                recordBtn.innerText = "Stop Recording";
+                recordBtn.classList.add('recording');
+                downloadBtn.disabled = true;
+            }
+        });
+
+        function exportRecording() {
+            const blob = new Blob(recordedChunks, { type: 'audio/webm' }); // WebM is standard for MediaRecorder
+            const url = URL.createObjectURL(blob);
+            audioPlayer.src = url;
+            audioPlayer.style.display = 'block';
+            
+            downloadBtn.onclick = () => {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `voice-morph-${Date.now()}.webm`;
+                a.click();
+            };
+        }
+
+        // --- Visualizer & Gate Logic ---
+        function drawVisualizer() {
+            requestAnimationFrame(drawVisualizer);
+            if (!analyser) return;
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            // Gate Logic
+            let sum = 0;
+            for(let i=0; i<bufferLength; i++) {
+                sum += Math.abs(dataArray[i] - 128);
+            }
+            const average = sum / bufferLength;
+
+            // Simple noise gate behavior
+            if (gateToggle.checked) {
+                // Threshold ~ 5-10
+                if (average < 5) {
+                    // Mute output if below threshold
+                     gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+                } else {
+                     gainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.05);
+                }
+            } else {
+                gainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.1);
+            }
+
+            // Draw
+            canvasCtx.fillStyle = '#1e1e1e';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+            canvasCtx.lineWidth = 2;
+            canvasCtx.strokeStyle = '#bb86fc';
+            canvasCtx.beginPath();
+
+            const sliceWidth = canvas.width * 1.0 / bufferLength;
+            let x = 0;
+
+            for(let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * canvas.height / 2;
+
+                if(i === 0) canvasCtx.moveTo(x, y);
+                else canvasCtx.lineTo(x, y);
+
+                x += sliceWidth;
+            }
+
+            canvasCtx.lineTo(canvas.width, canvas.height / 2);
+            canvasCtx.stroke();
+        }
+
+    </script>
+</body>
+</html>
