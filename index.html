@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -35,7 +36,7 @@
             background-color: var(--bg-surface);
             padding: 30px;
             border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             display: flex;
             flex-direction: column;
             gap: 24px;
@@ -69,7 +70,7 @@
         }
 
         .panel {
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
             padding: 20px;
             border-radius: 12px;
             border: 1px solid var(--border);
@@ -128,12 +129,19 @@
             height: 20px;
         }
 
-        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
 
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background-color: #444;
             transition: .4s;
             border-radius: 20px;
@@ -151,8 +159,13 @@
             border-radius: 50%;
         }
 
-        input:checked + .slider { background-color: var(--primary); }
-        input:checked + .slider:before { transform: translateX(20px); }
+        input:checked+.slider {
+            background-color: var(--primary);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
 
         /* Buttons */
         .btn-group {
@@ -184,21 +197,33 @@
         button.secondary {
             background-color: #333;
         }
-        button.secondary:hover { background-color: #444; }
+
+        button.secondary:hover {
+            background-color: #444;
+        }
 
         button.record-btn {
             background-color: var(--error);
             width: 100%;
         }
+
         button.record-btn.recording {
             animation: pulse 1.5s infinite;
             background-color: red;
         }
 
         @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(255, 0, 0, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0);
+            }
         }
 
         /* Visualizer */
@@ -225,26 +250,28 @@
             color: var(--secondary);
             font-size: 0.9rem;
         }
-        
+
         .presets {
             display: flex;
             gap: 8px;
             margin-bottom: 20px;
         }
+
         .preset-btn {
             font-size: 0.8rem;
             padding: 6px 12px;
             background: transparent;
             border: 1px solid var(--border);
         }
+
         .preset-btn.active {
             background: var(--secondary);
             color: #000;
             border-color: var(--secondary);
         }
-
     </style>
 </head>
+
 <body>
 
     <div class="container">
@@ -256,8 +283,22 @@
         <canvas id="visualizer"></canvas>
         <div class="status" id="status-text">Ready. Click 'Start Mic' to begin.</div>
 
-        <div class="panel">
+        <div class="panel" style="display: flex; gap: 10px; flex-direction: column;">
             <button id="start-btn">🎙️ Start Microphone</button>
+            <div class="control-group" id="output-dev-container" style="display:none; margin-bottom: 0;">
+                <label>
+                    <span>Output Device (e.g. Virtual Cable)</span>
+                </label>
+                <select id="output-select"
+                    style="width: 100%; padding: 8px; border-radius: 4px; background: #333; color: white; border: 1px solid #444;">
+                    <option value="">Default Output</option>
+                </select>
+            </div>
+
+            <button id="quick-toggle-btn" class="secondary"
+                style="margin-top: 10px; background-color: #03dac6; color: #000; font-weight: bold; height: 50px; font-size: 1.1rem;">
+                SWITCH TO FEMALE
+            </button>
         </div>
 
         <div class="controls-grid">
@@ -285,7 +326,7 @@
                     </label>
                     <input type="range" id="pitch-slider" min="-12" max="12" step="0.5" value="0">
                 </div>
-                
+
                 <div class="control-group">
                     <label>
                         <span>Echo / Reverb</span>
@@ -322,12 +363,12 @@
                 <div class="panel-header">
                     <span>Recording studio</span>
                 </div>
-                
+
                 <div style="display: flex; flex-direction: column; gap: 15px;">
                     <button id="record-btn" class="record-btn" disabled>Start Recording</button>
-                    
+
                     <audio id="audio-player" controls style="width: 100%; display: none;"></audio>
-                    
+
                     <div class="btn-group">
                         <button id="download-btn" class="secondary" disabled>Download WAV (WebM)</button>
                     </div>
@@ -336,7 +377,8 @@
         </div>
 
         <div class="warning">
-            ⚠️ Disclaimer: For entertainment and accessibility purposes only. Do not use for impersonation or illegal activities.
+            ⚠️ Disclaimer: For entertainment and accessibility purposes only. Do not use for impersonation or illegal
+            activities.
         </div>
     </div>
 
@@ -371,16 +413,50 @@
         const canvas = document.getElementById('visualizer');
         const canvasCtx = canvas.getContext('2d');
         const presetBtns = document.querySelectorAll('.preset-btn');
-        
+
         const recordBtn = document.getElementById('record-btn');
         const audioPlayer = document.getElementById('audio-player');
         const downloadBtn = document.getElementById('download-btn');
+        const quickToggleBtn = document.getElementById('quick-toggle-btn');
 
         let isRecording = false;
+        let currentVoiceState = 'normal'; // 'normal' or 'morphed'
+
+        quickToggleBtn.addEventListener('click', () => {
+            // If context not started, start it
+            if (!audioCtx || audioCtx.state === 'suspended') {
+                if (startBtn) startBtn.click();
+            }
+
+            if (currentVoiceState === 'normal') {
+                // Switch to Feminine
+                applyPreset('feminine');
+                currentVoiceState = 'morphed';
+                quickToggleBtn.innerText = "SWITCH TO NORMAL";
+                quickToggleBtn.style.backgroundColor = "#bb86fc"; // Primary purple
+                quickToggleBtn.style.color = "#fff";
+
+                // Highlight preset btn
+                presetBtns.forEach(b => b.classList.remove('active'));
+                document.querySelector('button[data-preset="feminine"]').classList.add('active');
+
+            } else {
+                // Switch to Normal
+                applyPreset('normal');
+                currentVoiceState = 'normal';
+                quickToggleBtn.innerText = "SWITCH TO FEMALE";
+                quickToggleBtn.style.backgroundColor = "#03dac6"; // Secondary teal
+                quickToggleBtn.style.color = "#000";
+
+                // Highlight preset btn
+                presetBtns.forEach(b => b.classList.remove('active'));
+                document.querySelector('button[data-preset="normal"]').classList.add('active');
+            }
+        });
 
         // --- Worklet Blob URL ---
         // We inject the AudioWorklet processor code directly via a Blob to keep this single-file.
-        
+
         // Actually, I'll use a very specific, simpler algorithm for the Worklet:
         // Just a Ring Buffer where Read Head moves at `rate` speed. 
         // When Read Head passes Write Head, we fade out/in to a new offset.
@@ -448,14 +524,16 @@
         async function initAudio() {
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                
+
                 // Mic Input
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
-                }});
-                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
                 statusText.innerText = "Microphone Active";
                 startBtn.disabled = true;
                 startBtn.classList.add('secondary');
@@ -464,11 +542,11 @@
 
                 // --- Build Graph ---
                 micSource = audioCtx.createMediaStreamSource(stream);
-                
+
                 // 1. Pitch Shifter (Worklet)
                 const blob = new Blob([reliablePitchWorklet], { type: 'application/javascript' });
                 const blobUrl = URL.createObjectURL(blob);
-                
+
                 try {
                     await audioCtx.audioWorklet.addModule(blobUrl);
                     workletNode = new AudioWorkletNode(audioCtx, 'pitch-processor');
@@ -477,21 +555,21 @@
                     // Fallback to pass-through if worklet fails (e.g. strict origin)
                     // But we will continue setup
                 }
-                
+
                 // 2. EQ / Filter
                 filterNode = audioCtx.createBiquadFilter();
                 filterNode.type = 'allpass'; // Start neutral
-                
+
                 // 3. Robot Effect (Ring Mod)
                 // Source splits: -> Dry -> Merge
                 //                -> Osc gain (carrier) -> Gain (modulator) -> Merge
                 robotOsc = audioCtx.createOscillator();
                 robotOsc.frequency.value = 50;
                 robotOsc.start();
-                
+
                 const robotCarrierGain = audioCtx.createGain();
                 robotCarrierGain.gain.value = 1.0;
-                
+
                 // 4. Echo
                 delayNode = audioCtx.createDelay();
                 delayFeedback = audioCtx.createGain();
@@ -499,51 +577,51 @@
                 delayFeedback.gain.value = 0.4;
                 delayNode.connect(delayFeedback);
                 delayFeedback.connect(delayNode);
-                
+
                 // Master Gain
                 gainNode = audioCtx.createGain();
                 monitorGain = audioCtx.createGain();
                 monitorGain.gain.value = 0; // Muted initially
-                
+
                 // Visualizer
                 analyser = audioCtx.createAnalyser();
                 analyser.fftSize = 256;
 
                 // --- Routing ---
                 // Mic -> Worklet -> Filter -> RobotGain -> Delay -> Master.
-                
+
                 if (workletNode) {
                     micSource.connect(workletNode);
                     workletNode.connect(filterNode);
                 } else {
                     micSource.connect(filterNode);
                 }
-                
+
                 // Ring Mod implementation
                 filterNode.connect(robotCarrierGain);
-                
+
                 // Robot Mod Logic: Osc modulates gain. 
                 // Note: To truly get ring mod, we need to multiply signal by osc.
                 // GainNode 'gain' param * Audio Signal. 
                 function enableRobot(enable) {
-                    if(enable) {
-                       // To achieve Ring Mod in WebAudio:
-                       // We used to connect Osc -> Gain.gain.
-                       // But if Gain.gain is 1, it modulates 0..1? 
-                       // No, Osc output is -1..1.
-                       // 1 + (-1..1) = 0..2 modulation (Tremolo).
-                       // We want pure Ring Mod (AM with carrier suppressed? No, just AM).
-                       // If we basically want "Dalek":
-                       // Gain.gain.value = 0. Connect Osc. 
-                       // Result = Input * Osc.
-                       robotCarrierGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.01);
-                       robotOsc.connect(robotCarrierGain.gain);
+                    if (enable) {
+                        // To achieve Ring Mod in WebAudio:
+                        // We used to connect Osc -> Gain.gain.
+                        // But if Gain.gain is 1, it modulates 0..1? 
+                        // No, Osc output is -1..1.
+                        // 1 + (-1..1) = 0..2 modulation (Tremolo).
+                        // We want pure Ring Mod (AM with carrier suppressed? No, just AM).
+                        // If we basically want "Dalek":
+                        // Gain.gain.value = 0. Connect Osc. 
+                        // Result = Input * Osc.
+                        robotCarrierGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.01);
+                        robotOsc.connect(robotCarrierGain.gain);
                     } else {
-                       try { robotOsc.disconnect(robotCarrierGain.gain); } catch(e){}
-                       robotCarrierGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+                        try { robotOsc.disconnect(robotCarrierGain.gain); } catch (e) { }
+                        robotCarrierGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
                     }
                 }
-                
+
                 // Output to Delay
                 robotCarrierGain.connect(delayNode);
                 // Dry path for delay
@@ -553,19 +631,19 @@
 
                 // Master -> Analyser -> Destination / Recorder
                 gainNode.connect(analyser);
-                
+
                 // Monitor
                 analyser.connect(monitorGain);
                 monitorGain.connect(audioCtx.destination);
-                
+
                 // Recorder
                 recordStreamDest = audioCtx.createMediaStreamDestination();
                 analyser.connect(recordStreamDest);
-                
+
                 recorder = new MediaRecorder(recordStreamDest.stream);
                 recorder.ondataavailable = e => recordedChunks.push(e.data);
                 recorder.onstop = exportRecording;
-                
+
                 // Store enableRobot function for toggle
                 window.setRobotEffect = enableRobot;
 
@@ -579,14 +657,60 @@
             }
         }
 
+        const outputSelect = document.getElementById('output-select');
+        const outputDevContainer = document.getElementById('output-dev-container');
+
+        // --- Output Device Selection (Chrome/Edge only) ---
+        async function initOutputDevices() {
+            try {
+                // Check if setSinkId is supported (not in Firefox/Safari generally)
+                // Note: Secure context required
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const outputs = devices.filter(d => d.kind === 'audiooutput');
+
+                if (outputs.length > 0) {
+                    outputDevContainer.style.display = 'block';
+                    outputSelect.innerHTML = '<option value="">Default System Output</option>';
+                    outputs.forEach(dev => {
+                        const opt = document.createElement('option');
+                        opt.value = dev.deviceId;
+                        opt.innerText = dev.label || `Speaker ${outputSelect.length}`;
+                        outputSelect.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error("Error listing output devices:", e);
+            }
+        }
+
+        outputSelect.addEventListener('change', async (e) => {
+            const deviceId = e.target.value;
+            if (!audioCtx) return;
+            try {
+                if (typeof audioCtx.setSinkId === 'function') {
+                    await audioCtx.setSinkId(deviceId);
+                }
+            } catch (err) {
+                console.error("Error setting output device:", err);
+            }
+        });
+
+        // Wrap initAudio to include device enumeration
+        const originalInit = initAudio;
+        initAudio = async function () {
+            await originalInit();
+            initOutputDevices();
+        };
+
         // --- Controls ---
-        
+
         startBtn.addEventListener('click', () => {
-             // Resume context if suspended (browser requirements)
-             if (audioCtx && audioCtx.state === 'suspended') {
-                 audioCtx.resume();
-             }
-             if (!audioCtx) initAudio();
+            // Resume context if suspended (browser requirements)
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            if (!audioCtx) initAudio();
         });
 
         // Monitor
@@ -601,7 +725,7 @@
             const val = parseFloat(e.target.value);
             pitchVal.innerText = val > 0 ? `+${val}` : val;
             updatePitch(val);
-            
+
             // Unset presets visuals if manual change?
             presetBtns.forEach(b => b.classList.remove('active'));
         });
@@ -617,15 +741,15 @@
         echoSlider.addEventListener('input', (e) => {
             const val = parseFloat(e.target.value);
             echoVal.innerText = Math.round(val * 100) + "%";
-            
+
             if (delayNode) {
-                 if (val === 0) {
-                     delayNode.delayTime.setTargetAtTime(0, audioCtx.currentTime, 0.1);
-                     delayFeedback.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
-                 } else {
-                     delayNode.delayTime.setTargetAtTime(0.3, audioCtx.currentTime, 0.1); // Fixed 300ms
-                     delayFeedback.gain.setTargetAtTime(val, audioCtx.currentTime, 0.1);
-                 }
+                if (val === 0) {
+                    delayNode.delayTime.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                    delayFeedback.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                } else {
+                    delayNode.delayTime.setTargetAtTime(0.3, audioCtx.currentTime, 0.1); // Fixed 300ms
+                    delayFeedback.gain.setTargetAtTime(val, audioCtx.currentTime, 0.1);
+                }
             }
         });
 
@@ -638,7 +762,7 @@
 
         // Gate Toggle (Visualization based mute?)
         gateToggle.addEventListener('change', (e) => {
-             // Logic in visualizer loop
+            // Logic in visualizer loop
         });
 
         // Presets
@@ -653,7 +777,7 @@
             btn.addEventListener('click', () => {
                 const key = btn.dataset.preset;
                 applyPreset(key);
-                
+
                 // UI update
                 presetBtns.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
@@ -662,12 +786,12 @@
 
         function applyPreset(name) {
             const p = presets[name];
-            
+
             // Set Pitch
             pitchSlider.value = p.pitch;
             pitchVal.innerText = p.pitch;
             updatePitch(p.pitch);
-            
+
             // Set Echo
             echoSlider.value = p.echo;
             echoVal.innerText = (p.echo * 100) + "%";
@@ -675,18 +799,18 @@
             if (delayNode) {
                 const val = p.echo;
                 if (val === 0) {
-                     delayNode.delayTime.value = 0;
-                     delayFeedback.gain.value = 0;
-                 } else {
-                     delayNode.delayTime.value = 0.25;
-                     delayFeedback.gain.value = val;
-                 }
+                    delayNode.delayTime.value = 0;
+                    delayFeedback.gain.value = 0;
+                } else {
+                    delayNode.delayTime.value = 0.25;
+                    delayFeedback.gain.value = val;
+                }
             }
 
             // Set Robot
             robotToggle.checked = p.robot;
             if (window.setRobotEffect) window.setRobotEffect(p.robot);
-            
+
             // Set Filter
             if (filterNode) {
                 if (p.filter) {
@@ -703,7 +827,7 @@
         // --- Recording ---
         recordBtn.addEventListener('click', () => {
             if (!recorder) return;
-            
+
             if (isRecording) {
                 // Stop
                 recorder.stop();
@@ -716,7 +840,7 @@
                 recordedChunks = [];
                 audioPlayer.style.display = 'none';
                 if (audioCtx.state === 'suspended') audioCtx.resume();
-                
+
                 recorder.start();
                 isRecording = true;
                 recordBtn.innerText = "Stop Recording";
@@ -730,7 +854,7 @@
             const url = URL.createObjectURL(blob);
             audioPlayer.src = url;
             audioPlayer.style.display = 'block';
-            
+
             downloadBtn.onclick = () => {
                 const a = document.createElement('a');
                 a.href = url;
@@ -750,7 +874,7 @@
 
             // Gate Logic
             let sum = 0;
-            for(let i=0; i<bufferLength; i++) {
+            for (let i = 0; i < bufferLength; i++) {
                 sum += Math.abs(dataArray[i] - 128);
             }
             const average = sum / bufferLength;
@@ -760,9 +884,9 @@
                 // Threshold ~ 5-10
                 if (average < 5) {
                     // Mute output if below threshold
-                     gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+                    gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
                 } else {
-                     gainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.05);
+                    gainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.05);
                 }
             } else {
                 gainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.1);
@@ -779,11 +903,11 @@
             const sliceWidth = canvas.width * 1.0 / bufferLength;
             let x = 0;
 
-            for(let i = 0; i < bufferLength; i++) {
+            for (let i = 0; i < bufferLength; i++) {
                 const v = dataArray[i] / 128.0;
                 const y = v * canvas.height / 2;
 
-                if(i === 0) canvasCtx.moveTo(x, y);
+                if (i === 0) canvasCtx.moveTo(x, y);
                 else canvasCtx.lineTo(x, y);
 
                 x += sliceWidth;
@@ -795,4 +919,5 @@
 
     </script>
 </body>
+
 </html>
